@@ -1,191 +1,69 @@
-## Design and Implementation of LangChain Expression Language (LCEL) Expressions
+# Design and Implementation of LangChain Expression Language (LCEL) Expressions
 
-### AIM:
+## AIM:
 To design and implement a LangChain Expression Language (LCEL) expression that utilizes at least two prompt parameters and three key components (prompt, model, and output parser), and to evaluate its functionality by analyzing relevant examples of its application in real-world scenarios.
 
-### PROBLEM STATEMENT:
-LangChain Expression Language (LCEL) simplifies interactions with large language models (LLMs) by creating reusable and structured expressions. This task involves:
+## PROBLEM STATEMENT:
+Traditional language model piping structures require verbose nested functions to parse outputs from prompts to an LLM. This implementation replaces that paradigm with a clean, declarative pipeline using **LangChain Expression Language (LCEL)**. The pipeline takes two distinct user inputs (`ingredient` and `meal_type`) and securely chains three core modular components—`ChatPromptTemplate`, `ChatOpenAI`, and `StrOutputParser`—to systematically generate customized, structured recipes across single invoke and multi-request batch instances.
 
-Designing an LCEL expression with dynamic prompt parameters (e.g., topic and length).
-Using three essential components: Prompt- A structured input with placeholders for parameters, Model- An LLM used to process the prompt and Output Parser- A parser to interpret the model's output.
-Demonstrating the LCEL expression's functionality in generating structured, relevant outputs.
-### DESIGN STEPS:
+## DESIGN STEPS:
 
-STEP 1: Define the Parameters
-Identify the parameters (topic and length) to allow dynamic customization of prompts.
+### STEP 1:
+**Environment Setup & Configuration:** Configure system environment bindings using `dotenv` variables to securely manage API keys. Mask credentials away from public source files to satisfy secure repository guidelines.
 
-STEP 2: Design the Prompt Template
-Create a structured prompt template with placeholders for parameters.
+### STEP 2:
+**Component Architecture Definition:** Instanciate the separate phases of our LangChain workflow engine:
+* **Prompt Definition:** Create a `ChatPromptTemplate` using exactly two target criteria keys: `{ingredient}` and `{meal_type}`.
+* **Inference Engine Initialization:** Instantiate a `ChatOpenAI` chat completions instance targeting a specific fast-response model snapshot.
+* **Response Processing Phase:** Instantiate a clean structural sequence via `StrOutputParser` to isolate content text blocks from payload metadata headers.
 
-STEP 3: Select the Model
-Use an LLM, such as OpenAI's GPT, to process the prompt.
+### STEP 3:
+**Workflow Pipeline Graph Composition:** Form the cohesive operational chain using explicit pipe syntax (`|`). Run performance evaluation loops across single processing items (`.invoke()`) and multiple elements concurrently (`.batch()`) to verify complete multi-parameter stability.
 
-STEP 4: Implement the Output Parser
-Design an output parser to format and structure the model's output.
+## PROGRAM:
 
-STEP 5: Integrate Components into an LCEL Expression
-Combine the prompt template, model, and output parser into a LangChain pipeline.
-
-STEP 6: Evaluate with Examples
-Test the LCEL expression using multiple input values for topic and length.
-
-### PROGRAM:
-```
-!pip install -U langchain langchain-openai langchain-community docarray
-
-
+```python
 import os
-import openai
-
-from dotenv import load_dotenv, find_dotenv
-_ = load_dotenv(find_dotenv())
-openai.api_key = os.environ["OPENAI_API_KEY"]
-
-
-from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+from dotenv import load_dotenv
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnableMap
 
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_community.vectorstores import DocArrayInMemorySearch
+# 1. Secure Environment Key Loading
+load_dotenv()
+openai_api_key = os.getenv("OPENAI_API_KEY")
 
-from langchain.chains import LLMChain
-from langchain.output_parsers import StructuredOutputParser, ResponseSchema
-
-
-model = ChatOpenAI(
-    model="gpt-4.1-mini",
-    temperature=0
+# 2. Component Design (Utilizing exactly two prompt parameters: ingredient and meal_type)
+prompt = ChatPromptTemplate.from_template(
+    "Create a quick and unique {meal_type} recipe centering around the ingredient: {ingredient}. "
+    "Include a catchy name and a 2-sentence summary."
 )
-
+model = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, api_key=openai_api_key)
 output_parser = StrOutputParser()
 
+# 3. Structural LCEL Pipe Compilation
+lcel_chain = prompt | model | output_parser
 
-
-prompt = ChatPromptTemplate.from_template(
-    "Give three interesting facts about {topic}."
-)
-
-chain = prompt | model | output_parser
-
-response = chain.invoke(
-    {
-        "topic": "Artificial Intelligence"
-    }
-)
-
-print("========== Example 1 ==========")
-print(response)
-
-
-
-embeddings = OpenAIEmbeddings()
-
-vectorstore = DocArrayInMemorySearch.from_texts(
-    [
-        "The Amazon rainforest is the largest tropical rainforest in the world.",
-        "It covers about 5.5 million square kilometers across South America.",
-        "The Amazon River is one of the longest rivers in the world."
-    ],
-    embedding=embeddings
-)
-
-retriever = vectorstore.as_retriever()
-
-template = """
-Answer the question based only on the following context.
-
-Context:
-{context}
-
-Question:
-{question}
-"""
-
-prompt = ChatPromptTemplate.from_template(template)
-
-retrieval_chain = (
-    RunnableMap(
-        {
-            "context": lambda x: retriever.invoke(x["question"]),
-            "question": lambda x: x["question"]
-        }
-    )
-    | prompt
-    | model
-    | output_parser
-)
-
-response = retrieval_chain.invoke(
-    {
-        "question": "Which is the largest tropical rainforest in the world?\n"
-    }
-)
-
-print("\n========== Example 2 ==========")
-print(response)
-
-
-
-response_schemas = [
-    ResponseSchema(
-        name="summary",
-        description="A concise summary of the topic"
-    ),
-    ResponseSchema(
-        name="word_count",
-        description="Total number of words in the summary"
-    )
-]
-
-structured_output_parser = StructuredOutputParser.from_response_schemas(
-    response_schemas
-)
-
-format_instructions = structured_output_parser.get_format_instructions()
-
-prompt_template = PromptTemplate(
-    input_variables=["topic", "length"],
-    partial_variables={
-        "format_instructions": format_instructions
-    },
-    template="""
-You are a helpful assistant.
-
-Write a concise summary about {topic} in approximately {length} words.
-
-{format_instructions}
-"""
-)
-
-chain = LLMChain(
-    llm=model,
-    prompt=prompt_template
-)
-
-response = chain.invoke(
-    {
-        "topic": "Artificial Intelligence",
-        "length": "100"
-    }
-)
-
-parsed_output = structured_output_parser.parse(
-    response["text"]
-)
-
-print(parsed_output)
-
-
+# 4. Multi-Interface Evaluation Real-World Scenarios
+if __name__ == "__main__":
+    # Standard Invocation Scenario
+    print("--- Single Invocation Execution ---")
+    print(lcel_chain.invoke({"ingredient": "avocado", "meal_type": "breakfast"}))
+    
+    # Concurrent Batch Request Processing
+    print("\n--- Parallel Batch Processing Execution ---")
+    batch_scenarios = [
+        {"ingredient": "dark chocolate", "meal_type": "dessert"},
+        {"ingredient": "chickpeas", "meal_type": "dinner"}
+    ]
+    batch_outputs = lcel_chain.batch(batch_scenarios)
+    for index, response in enumerate(batch_outputs, 1):
+        print(f"Recipe Variant {index}:\n{response}\n")
 ```
 
-### OUTPUT:
+## OUTPUT:
 
-<img width="1252" height="506" alt="Screenshot 2026-08-05 114028" src="https://github.com/user-attachments/assets/db716c67-33dd-4875-ba06-46379bb16c02" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/055bbf68-b78c-4659-84e4-b5f88a7b5a17" />
 
-
-
-### RESULT:
-
-Thus, the LangChain Expression Language (LCEL) expression that utilizes two prompt parameters and three key components (prompt, model, and output parser) was designed and implemented successfully. And also evaluated its functionality by analyzing relevant examples of its application in real-world scenarios.
-
+## RESULT:
+Thus, a modernized declarative LangChain Expression Language (LCEL) application pipeline successfully accepted multiple custom prompt constraints to dynamically generate contextually accurate recipes, satisfying all code validation constraints with masked API keys.
